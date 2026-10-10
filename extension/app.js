@@ -1,9 +1,7 @@
-import LibRaw from "./vendor/libraw/index.js";
-import { encodePNG } from "./png.js";
 import { makeZip } from "./zip.js";
 
 const MAX_FILES = 100;
-const CONCURRENCY = 2;
+const POOL_SIZE = 2;
 
 const els = {
   drop: document.getElementById("drop"),
@@ -17,13 +15,57 @@ const els = {
   summary: document.getElementById("summary"),
 };
 
-let items = []; // { id, file, status, name, blob, url, w, h, bits, error }
+let items = [];
 let nextId = 0;
 let running = false;
 
-function baseName(name) {
-  return name.replace(/\.[^.]+$/, "");
+// ---- Worker pool (dcraw decode + PNG encode run off the UI thread) ----
+const pool = [];
+let msgId = 0;
+function makeWorker() {
+  const w = new Worker("decoder.worker.js");
+  w.busy = false;
+  w.jobs = new Map();
+  w.onmessage = (e) => {
+    const m = e.data;
+    if (m.type !== "result") return;
+    const job = w.jobs.get(m.id);
+    if (!job) return;
+    w.jobs.delete(m.id);
+    w.busy = false;
+    m.ok ? job.resolve(m) : job.reject(new Error(m.error));
+    pump();
+  };
+  w.onerror = (e) => {
+    for (const job of w.jobs.values()) job.reject(new Error(e.message || "worker error"));
+    w.jobs.clear();
+    w.busy = false;
+    pump();
+  };
+  return w;
 }
+function ensurePool() { while (pool.length < POOL_SIZE) pool.push(makeWorker()); }
+
+const waitQ = [];
+function decode(buffer, bits, qual) {
+  return new Promise((resolve, reject) => {
+    waitQ.push({ buffer, bits, qual, resolve, reject });
+    pump();
+  });
+}
+function pump() {
+  if (!waitQ.length) return;
+  const w = pool.find((x) => !x.busy);
+  if (!w) return;
+  const task = waitQ.shift();
+  const id = msgId++;
+  w.busy = true;
+  w.jobs.set(id, task);
+  w.postMessage({ type: "convert", id, buffer: task.buffer, bits: task.bits, qual: task.qual }, [task.buffer]);
+}
+
+// ---- helpers ----
+function baseName(name) { return name.replace(/\.[^.]+$/, ""); }
 function fmtBytes(n) {
   if (n < 1024) return n + " B";
   if (n < 1048576) return (n / 1024).toFixed(1) + " KB";
@@ -87,64 +129,34 @@ function render() {
   els.qual.disabled = running;
 }
 
-function settings() {
-  return {
-    useCameraWb: true,
-    outputColor: 1,       // sRGB
-    outputBps: Number(els.bits.value), // 8 or 16
-    userQual: Number(els.qual.value),  // demosaic quality
-    halfSize: false,
-    userFlip: -1,         // keep camera orientation
-    highlight: 0,
-    noAutoBright: false,
-  };
-}
-
-async function convertOne(it) {
+async function convertOne(it, bits, qual) {
   it.status = "working";
   render();
-  const raw = new LibRaw();
   try {
-    const buf = new Uint8Array(await it.file.arrayBuffer());
-    await raw.open(buf, settings());
-    const img = await raw.imageData();
-    if (!img) throw new Error("decode returned no image");
-    it.blob = await encodePNG({
-      width: img.width,
-      height: img.height,
-      colors: img.colors,
-      bits: img.bits,
-      data: img.data,
-    });
+    const buf = await it.file.arrayBuffer();
+    const r = await decode(buf, bits, qual);
+    it.blob = new Blob([r.png], { type: "image/png" });
     it.url = URL.createObjectURL(it.blob);
-    it.w = img.width;
-    it.h = img.height;
-    it.bits = img.bits;
+    it.w = r.width;
+    it.h = r.height;
+    it.bits = r.bits;
     it.status = "done";
   } catch (e) {
     it.status = "error";
     it.error = (e && e.message) || String(e);
-  } finally {
-    raw.dispose();
-    render();
   }
+  render();
 }
 
 async function runQueue() {
   if (running) return;
   running = true;
   render();
+  ensurePool();
+  const bits = Number(els.bits.value);
+  const qual = Number(els.qual.value);
   const queue = items.filter((i) => i.status === "queued");
-  let idx = 0;
-  async function worker() {
-    while (idx < queue.length) {
-      const it = queue[idx++];
-      await convertOne(it);
-    }
-  }
-  const workers = [];
-  for (let i = 0; i < Math.min(CONCURRENCY, queue.length); i++) workers.push(worker());
-  await Promise.all(workers);
+  await Promise.all(queue.map((it) => convertOne(it, bits, qual)));
   running = false;
   render();
 }
@@ -166,7 +178,7 @@ async function downloadZip() {
   const seen = new Map();
   const files = done.map((i) => {
     let name = i.name;
-    const n = seen.get(name) || 0;
+    const n = seen.get(i.name) || 0;
     if (n) name = name.replace(/\.png$/, `_${n}.png`);
     seen.set(i.name, n + 1);
     return { name, blob: i.blob };
@@ -177,7 +189,6 @@ async function downloadZip() {
   els.zip.disabled = false;
 }
 
-// Events
 els.input.addEventListener("change", (e) => { addFiles(e.target.files); els.input.value = ""; });
 els.drop.addEventListener("click", () => els.input.click());
 ["dragenter", "dragover"].forEach((ev) =>
