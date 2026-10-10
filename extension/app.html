@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>DNG → PNG Converter</title>
+<style>
+  :root { --bg:#0f1115; --panel:#171a21; --panel2:#1e222b; --line:#2a2f3a; --txt:#e8eaf0; --muted:#9aa3b2; --accent:#4f8cff; --ok:#39b57a; --err:#e0556b; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--txt); font:14px/1.5 system-ui,Segoe UI,Roboto,sans-serif; }
+  .wrap { max-width:860px; margin:0 auto; padding:28px 20px 60px; }
+  h1 { font-size:22px; margin:0 0 4px; }
+  .lead { color:var(--muted); margin:0 0 20px; }
+  .drop { border:2px dashed var(--line); border-radius:14px; padding:34px; text-align:center; cursor:pointer; background:var(--panel); transition:.15s; }
+  .drop:hover, .drop.over { border-color:var(--accent); background:var(--panel2); }
+  .drop strong { color:var(--accent); }
+  .drop small { color:var(--muted); display:block; margin-top:6px; }
+  .bar { display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin:18px 0; }
+  .btn { background:var(--accent); color:#fff; border:0; border-radius:9px; padding:9px 16px; font-weight:600; cursor:pointer; }
+  .btn:disabled { opacity:.45; cursor:not-allowed; }
+  .btn.ghost { background:var(--panel2); color:var(--txt); border:1px solid var(--line); }
+  .btn.small { padding:5px 11px; font-size:12px; border-radius:7px; }
+  label.opt { color:var(--muted); display:flex; align-items:center; gap:6px; }
+  select { background:var(--panel2); color:var(--txt); border:1px solid var(--line); border-radius:7px; padding:6px 8px; }
+  .summary { color:var(--muted); margin-left:auto; }
+  .list { display:flex; flex-direction:column; gap:8px; }
+  .row { display:flex; align-items:center; gap:12px; background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:10px 14px; }
+  .row.done { border-color:#2b5a44; }
+  .row.error { border-color:#5a2b35; }
+  .meta { min-width:0; flex:1; }
+  .fname { font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .sub { color:var(--muted); font-size:12px; }
+  .actions { display:flex; align-items:center; gap:10px; }
+  a.btn { text-decoration:none; }
+  .badge { font-size:11px; text-transform:uppercase; letter-spacing:.04em; padding:3px 8px; border-radius:20px; background:var(--panel2); color:var(--muted); }
+  .badge.done { background:rgba(57,181,122,.15); color:var(--ok); }
+  .badge.error { background:rgba(224,85,107,.15); color:var(--err); }
+  .badge.working { background:rgba(79,140,255,.15); color:var(--accent); }
+  footer { color:var(--muted); font-size:12px; margin-top:26px; }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>DNG → PNG Converter</h1>
+    <p class="lead">Full-resolution, lossless conversion. Up to 100 files at once. Runs entirely on your device — nothing is uploaded.</p>
+
+    <div id="drop" class="drop">
+      <strong>Choose DNG files</strong> or drop them here
+      <small>Up to 100 · .dng</small>
+      <input id="file" type="file" accept=".dng,image/x-adobe-dng" multiple hidden />
+    </div>
+
+    <div class="bar">
+      <button id="convert" class="btn">Convert</button>
+      <button id="zip" class="btn ghost" disabled>Download all (.zip)</button>
+      <button id="clear" class="btn ghost" disabled>Clear</button>
+      <label class="opt">Depth
+        <select id="bits"><option value="16" selected>16-bit (max quality)</option><option value="8">8-bit</option></select>
+      </label>
+      <label class="opt">Demosaic
+        <select id="qual"><option value="3" selected>High (AHD)</option><option value="2">VNG</option><option value="1">Bilinear (fast)</option><option value="11">Best (DHT)</option></select>
+      </label>
+      <span id="summary" class="summary">No files yet.</span>
+    </div>
+
+    <div id="list" class="list"></div>
+
+    <footer>Preserves original pixel dimensions. 16-bit output keeps full tonal range from the raw sensor data.</footer>
+  </div>
+  <script type="module" src="app.js"></script>
+</body>
+</html>
